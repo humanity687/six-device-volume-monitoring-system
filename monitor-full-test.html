@@ -1,0 +1,1119 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<title>6设备音量监测系统</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    primary: '#3B82F6',
+                    online: '#10B981',
+                    offline: '#9CA3AF',
+                },
+            }
+        }
+    }
+</script>
+<style type="text/tailwindcss">
+    @layer utilities {
+        .device-square {
+            @apply w-20 h-20 md:w-24 md:h-24 rounded-lg flex items-center justify-center text-2xl md:text-3xl font-bold cursor-pointer transition-all duration-300 shadow-md;
+        }
+        .device-square.disabled {
+            @apply cursor-not-allowed opacity-70 pointer-events-none;
+        }
+        .btn-start {
+            @apply bg-primary hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50;
+        }
+    }
+</style>
+<style>
+/* 核心样式：版本二原生监测样式 + 版本一登录样式 */
+body { font-family: Arial, sans-serif; margin: 0; background-color: #f0f0f0; min-height: 100vh; overflow-x: hidden; }
+.server-status { position: fixed; top: 10px; right: 10px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; z-index: 100; }
+.status-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 10px; }
+.online { background: #4CAF50; } .offline { background: #f44336; }
+.terminated { background: #F59E0B; }
+
+.device-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1200px; margin: 0 auto; padding: 80px 20px 20px; }
+.device-card { 
+    background: white; 
+    border-radius: 8px; 
+    padding: 20px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+    transition: all 0.3s ease; 
+    border: 2px solid transparent;
+    cursor: pointer;
+}
+.device-card.competition-active {
+    border-color: #FF6B35;
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.2);
+}
+.device-card:hover { transform: translateY(-2px); }
+.device-card.clicked { transform: scale(0.98); box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+
+.volume-container { height: 20px; background: #eee; border-radius: 10px; margin: 15px 0; overflow: hidden; }
+.volume-bar { height: 100%; background: linear-gradient(90deg, #4CAF50, #FFC107); transition: width 0.3s ease; border-radius: 10px; }
+.volume-info { display: flex; justify-content: space-between; margin-top: 10px; color: #666; }
+h3 { margin: 0 0 15px 0; color: #333; }
+.device-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+.permission-message { text-align: center; margin: 20px; padding: 15px; background-color: #fff3cd; border-radius: 8px; }
+
+.competition-btn {
+    background-color: #3B82F6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 10px;
+}
+.competition-btn:hover { background-color: #2563EB; transform: translateY(-1px); }
+.competition-btn.active { background-color: #EF4444; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+.chart-container {
+    max-width: 1200px;
+    margin: 30px auto 20px;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.chart-header { margin-bottom: 15px; display: flex; align-items: center; }
+.chart-header h3 { margin: 0; }
+.legend { display: flex; margin-left: auto; gap: 15px; }
+.legend-item { display: flex; align-items: center; font-size: 14px; }
+.legend-color { width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; }
+.device-title-group { display: flex; align-items: center; }
+
+/* 界面切换样式 */
+#login-screen { display: block; }
+#monitoring-screen { display: none; }
+#end-screen { display: none; }
+
+.login-container {
+    max-width: 500px;
+    width: 100%;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    padding: 40px 30px;
+    text-align: center;
+}
+
+.waiting-title {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 30px;
+}
+
+#end-screen {
+    position: relative;
+    min-width: 320px;
+    min-height: 180px;
+    width: 100vw;
+    height: 100vh;
+    background-color: #F9FAFB;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.end-title {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: clamp(1.8rem, 5vw, 3rem);
+    font-weight: bold;
+    color: #333;
+    margin: 0;
+    text-align: center;
+    width: 90%;
+    max-width: 800px;
+}
+
+.stat-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90vw;
+    max-width: 1000px;
+    height: 60vh;
+    min-height: 300px;
+    max-height: 600px;
+}
+
+.stat-card {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-title {
+    font-size: clamp(1.2rem, 3vw, 1.5rem);
+    font-weight: 600;
+    color: #1F2937;
+    margin: 0 0 16px 0;
+    text-align: center;
+}
+
+#statsChart {
+    flex-grow: 1;
+    width: 100%;
+    height: calc(100% - 40px);
+}
+
+.legend-row {
+    position: absolute;
+    bottom: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 600px;
+}
+
+.confirm-btn {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #3B82F6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 90%;
+    max-width: 300px;
+    box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+}
+
+.confirm-btn:hover {
+    background-color: #2563EB;
+    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 0 6px 10px rgba(59, 130, 246, 0.3);
+}
+
+.confirm-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: translateX(-50%);
+    box-shadow: none;
+}
+
+/* 响应式优化 */
+@media (max-height: 600px) {
+    .end-title { font-size: 1.5rem; top: 10px; }
+    .stat-container { height: 50vh; top: 45%; }
+    .confirm-btn { bottom: 15px; padding: 10px 20px; }
+    .legend-row { bottom: -40px; }
+}
+@media (max-width: 768px) {
+    .device-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+    .device-grid { grid-template-columns: 1fr; }
+    .chart-wrapper { min-width: auto; }
+}
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+<!-- 登录界面 -->
+<div id="login-screen">
+    <div class="login-container">
+        <h1 class="waiting-title">等待统一开始...</h1>
+        <div class="mb-8">
+            <p class="text-center text-gray-600 mb-4">选择设备编号：</p>
+            <div class="grid grid-cols-3 gap-3 md:gap-4 justify-items-center">
+                <div class="device-square bg-offline" data-device="1">1</div>
+                <div class="device-square bg-offline" data-device="2">2</div>
+                <div class="device-square bg-offline" data-device="3">3</div>
+                <div class="device-square bg-offline" data-device="4">4</div>
+                <div class="device-square bg-offline" data-device="5">5</div>
+                <div class="device-square bg-offline" data-device="6">6</div>
+            </div>
+        </div>
+        <div class="text-center">
+            <button id="start-monitoring-btn" class="btn-start" disabled>
+                <i class="fa fa-play mr-2"></i>开始监测
+            </button>
+        </div>
+        <div class="text-center text-sm text-gray-500 mt-4" id="login-status">
+            状态：未连接
+        </div>
+    </div>
+</div>
+
+<!-- 服务器状态 -->
+<div class="server-status">
+    <div class="status-indicator offline" id="server-status"></div>
+    <span>服务器状态</span>
+</div>
+
+<!-- 权限提示 -->
+<div class="permission-message" id="permission-message" style="display: none;">
+    请允许麦克风访问以获取真实音量数据
+</div>
+
+<!-- 主监测界面（版本二原生结构） -->
+<div id="monitoring-screen">
+    <div class="device-grid" id="device-container"></div>
+    <div class="chart-container">
+        <div class="chart-header">
+            <h3>音量趋势图</h3>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #3B82F6;"></div>
+                    <span>本设备 (设备 <span id="legend-own-id">1</span>)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #EF4444;"></div>
+                    <span>对比设备 (设备 <span id="legend-compare-id">2</span>)</span>
+                </div>
+            </div>
+        </div>
+        <div class="chart-wrapper">
+            <canvas id="volumeChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- 监测结束界面（版本二原生结构） -->
+<div id="end-screen">
+    <h1 class="end-title">监测结束</h1>
+    <div class="stat-container">
+        <div class="stat-card">
+            <h2 class="stat-title">设备音量统计分析</h2>
+            <canvas id="statsChart"></canvas>
+        </div>
+        <div class="legend-row">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #EF4444;"></div>
+                <span>最大值</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #3B82F6;"></div>
+                <span>平均值</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #10B981;"></div>
+                <span>最小值</span>
+            </div>
+        </div>
+    </div>
+    <button class="confirm-btn" id="confirm-btn">确认</button>
+</div>
+
+<script>
+// 常量定义：还原图表参数，保留50ms发送间隔
+const MIN_VALID_VOL = 10;
+const WS_URL = 'ws://localhost:2065';
+let DEVICE_ID = null; // 登录后赋值，兼容版本一的设备选择
+let COMPARE_DEVICE_ID = 2;
+const MAX_CHART_POINTS = 30; // 还原为30个最大点数
+const SEND_INTERVAL = 50; // 保留50ms发送间隔
+const CHART_UPDATE_INTERVAL = 800; // 还原为800ms图表更新间隔
+
+// 终止序列相关（版本二原生逻辑）
+const targetSequence = [1, 2, 3, 4, 5, 6];
+let clickSequence = [];
+let sequenceTimeout = null;
+const SEQUENCE_RESET_DELAY = 3000;
+let isTerminated = false;
+
+// WebSocket连接（版本二原生逻辑）
+let ws;
+let isConnected = false;
+let isServerClosing = false;
+
+// 音量数据（版本二原生结构）- 新增con字段存储在线状态
+let deviceStats = {};
+for (let i = 1; i <= 6; i++) {
+    deviceStats[i] = { 
+        max: 0, 
+        min: 100, 
+        currentVol: 0, 
+        currentAvg: 0,
+        con: false // 新增：存储设备在线状态（来自服务器）
+    };
+}
+
+// 音量相关变量（版本二原生定义）
+let vol = 0;
+let avg = 0;
+let last = 0;
+let cnt = 0;
+
+// 音量历史记录（版本二原生逻辑，仅保留当前和对比设备）
+let deviceVolumeHistory = {
+    [DEVICE_ID]: [],
+    [COMPARE_DEVICE_ID]: []
+};
+
+// 图表相关（100%复用版本二逻辑）
+let volumeChart;
+let chartData = {
+    labels: [],
+    datasets: [
+        { 
+            label: `设备 ${DEVICE_ID || 1}`, 
+            data: [], 
+            borderColor: '#3B82F6', 
+            borderWidth: 2, 
+            tension: 0.2, 
+            fill: false 
+        },
+        { 
+            label: `设备 ${COMPARE_DEVICE_ID}`, 
+            data: [], 
+            borderColor: '#EF4444', 
+            borderWidth: 2, 
+            tension: 0.2, 
+            fill: false 
+        }
+    ]
+};
+
+// 音频相关（版本二原生逻辑）
+let audioContext;
+let analyser;
+let microphone;
+let dataArray;
+let chartUpdateInterval;
+
+// DOM元素缓存
+const DOM = {
+    loginScreen: document.getElementById('login-screen'),
+    monitoringScreen: document.getElementById('monitoring-screen'),
+    endScreen: document.getElementById('end-screen'),
+    deviceSquares: document.querySelectorAll('.device-square'), // 登录界面的设备正方形
+    startBtn: document.getElementById('start-monitoring-btn'),
+    loginStatus: document.getElementById('login-status'),
+    serverStatus: document.getElementById('server-status'),
+    permissionMsg: document.getElementById('permission-message'),
+    deviceContainer: document.getElementById('device-container'),
+    legendOwnId: document.getElementById('legend-own-id'),
+    legendCompareId: document.getElementById('legend-compare-id'),
+    confirmBtn: document.getElementById('confirm-btn')
+};
+
+// 初始化设备显示（100%复用版本二逻辑，仅适配DEVICE_ID动态赋值）
+function initDevices() {
+    const container = DOM.deviceContainer;
+    container.innerHTML = '';
+    
+    DOM.legendOwnId.textContent = DEVICE_ID;
+    DOM.legendCompareId.textContent = COMPARE_DEVICE_ID;
+    
+    // 初始化历史记录（版本二原生逻辑）
+    deviceVolumeHistory = {
+        [DEVICE_ID]: [],
+        [COMPARE_DEVICE_ID]: []
+    };
+    
+    for (let i = 1; i <= 6; i++) {
+        const device = document.createElement('div');
+        device.className = `device-card ${i === COMPARE_DEVICE_ID ? 'competition-active' : ''}`;
+        device.dataset.deviceId = i;
+        const isCurrentDevice = i === DEVICE_ID;
+        
+        device.innerHTML = `
+            <div class="device-header">
+                <div class="device-title-group">
+                    <h3>设备 ${i} ${isCurrentDevice ? '(当前设备)' : ''}</h3>
+                    ${i !== DEVICE_ID ? `<button class="competition-btn ${i === COMPARE_DEVICE_ID ? 'active' : ''}" data-device-id="${i}">竞争</button>` : ''}
+                </div>
+                <div class="status-indicator ${deviceStats[i].con ? 'online' : 'offline'}" id="status-${i}"></div>
+            </div>
+            <div class="volume-container">
+                <div class="volume-bar" id="volume-${i}" style="width: ${deviceStats[i].currentVol}%"></div>
+            </div>
+            <div class="volume-info">
+                <span>当前音量: <span id="current-${i}">${deviceStats[i].currentVol.toFixed(2)}%</span></span>
+                <span>平均音量: <span id="average-${i}">${deviceStats[i].currentAvg.toFixed(2)}%</span></span>
+            </div>
+        `;
+        container.appendChild(device);
+        
+        // 设备点击事件（版本二原生终止序列逻辑）
+        device.addEventListener('click', function(e) {
+            if (e.target.classList.contains('competition-btn') || isTerminated || isServerClosing) return;
+            const deviceId = parseInt(this.dataset.deviceId);
+            handleDeviceClick(deviceId, this);
+        });
+    }
+    
+    // 对比设备切换（版本二原生逻辑）
+    document.querySelectorAll('.competition-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const newCompareId = parseInt(this.getAttribute('data-device-id'));
+            setCompareDevice(newCompareId);
+        });
+    });
+}
+
+// 处理设备点击（版本二原生逻辑）
+function handleDeviceClick(deviceId, element) {
+    element.classList.add('clicked');
+    setTimeout(() => element.classList.remove('clicked'), 200);
+    
+    if (sequenceTimeout) {
+        clearTimeout(sequenceTimeout);
+    }
+    
+    clickSequence.push(deviceId);
+    
+    if (clickSequence.length === targetSequence.length) {
+        checkSequence();
+    } else {
+        sequenceTimeout = setTimeout(() => {
+            clickSequence = [];
+        }, SEQUENCE_RESET_DELAY);
+    }
+}
+
+// 检查序列（版本二原生逻辑）
+function checkSequence() {
+    const isCorrect = clickSequence.every((val, index) => val === targetSequence[index]);
+    
+    if (isCorrect) {
+        sendTerminateSignal();
+    } else {
+        clickSequence = [];
+    }
+}
+
+// 发送终止信号（版本二原生逻辑）
+function sendTerminateSignal() {
+    if (isTerminated) return;
+    
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+            ws.send(JSON.stringify({ type: 'terminate', deviceId: DEVICE_ID }));
+            isTerminated = true;
+            DOM.serverStatus.className = 'status-indicator terminated';
+        } catch (e) {
+            console.error('发送终止信号失败:', e);
+            isTerminated = false;
+        }
+    }
+}
+
+// 切换对比设备（版本二原生逻辑）
+function setCompareDevice(newId) {
+    if (newId === COMPARE_DEVICE_ID || newId === DEVICE_ID || isTerminated || isServerClosing) return;
+    
+    const oldCompareId = COMPARE_DEVICE_ID;
+    COMPARE_DEVICE_ID = newId;
+    
+    // 更新UI（版本二原生逻辑）
+    document.querySelector(`.device-card[data-device-id="${oldCompareId}"]`).classList.remove('competition-active');
+    document.querySelector(`.device-card[data-device-id="${COMPARE_DEVICE_ID}"]`).classList.add('competition-active');
+    DOM.legendCompareId.textContent = COMPARE_DEVICE_ID;
+    chartData.datasets[1].label = `设备 ${COMPARE_DEVICE_ID}`;
+    
+    // 重置历史记录（版本二原生逻辑）
+    deviceVolumeHistory[oldCompareId] = [];
+    deviceVolumeHistory[COMPARE_DEVICE_ID] = [];
+    chartData.datasets[1].data = chartData.labels.map(() => null);
+    
+    document.querySelectorAll('.competition-btn').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.deviceId) === COMPARE_DEVICE_ID);
+    });
+    
+    volumeChart.update();
+}
+
+// 初始化趋势图表（100%复用版本二逻辑）
+function initChart() {
+    const ctx = document.getElementById('volumeChart').getContext('2d');
+    if (volumeChart) {
+        volumeChart.destroy();
+    }
+    
+    volumeChart = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: '时间' }, grid: { display: false } },
+                y: { title: { display: true, text: '音量 (%)' }, min: 0, max: 100 }
+            },
+            plugins: { legend: { display: false } },
+            animation: { duration: 300 }
+        }
+    });
+}
+
+// 更新趋势图表（还原为800ms更新间隔）
+function addToChart() {
+    if (isTerminated || isServerClosing) return;
+    
+    const ownAvg = calculateAverage(deviceVolumeHistory[DEVICE_ID]);
+    const compareAvg = calculateAverage(deviceVolumeHistory[COMPARE_DEVICE_ID] || []);
+    
+    const timeLabel = new Date().toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        fractionalSecondDigits: 1 
+    });
+    
+    chartData.labels.push(timeLabel);
+    chartData.datasets[0].data.push(ownAvg || 0);
+    chartData.datasets[1].data.push(compareAvg || 0);
+    
+    if (chartData.labels.length > MAX_CHART_POINTS) {
+        chartData.labels.shift();
+        chartData.datasets[0].data.shift();
+        chartData.datasets[1].data.shift();
+    }
+    
+    volumeChart.update();
+    
+    deviceVolumeHistory[DEVICE_ID] = [];
+    if (deviceVolumeHistory[COMPARE_DEVICE_ID]) {
+        deviceVolumeHistory[COMPARE_DEVICE_ID] = [];
+    }
+}
+
+// 计算平均值（版本二原生函数）
+function calculateAverage(values) {
+    if (!values || !values.length) return 0;
+    return values.reduce((acc, val) => acc + val, 0) / values.length;
+}
+
+// 初始化音频（100%复用版本二逻辑）
+async function initAudio() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        DOM.permissionMsg.style.display = 'none';
+        
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        return true;
+    } catch (err) {
+        console.error('麦克风访问失败:', err);
+        DOM.permissionMsg.style.display = 'block';
+        return false;
+    }
+}
+
+// 获取音量（100%复用版本二逻辑）
+function GetVolume() {
+    if (!analyser || isTerminated || isServerClosing) return 0;
+    
+    analyser.getByteFrequencyData(dataArray);
+    const sum = dataArray.reduce((acc, val) => acc + val, 0);
+    return (sum / dataArray.length / 255) * 100;
+}
+
+// 发送音量数据（100%复用版本二逻辑）
+function SendVolume(vol, avg) {
+    if (isConnected && ws.readyState === WebSocket.OPEN && !isTerminated && !isServerClosing) {
+        deviceStats[DEVICE_ID].max = Math.max(deviceStats[DEVICE_ID].max, vol);
+        deviceStats[DEVICE_ID].min = Math.min(deviceStats[DEVICE_ID].min, vol);
+        deviceStats[DEVICE_ID].currentVol = vol;
+        deviceStats[DEVICE_ID].currentAvg = avg;
+        deviceStats[DEVICE_ID].con = true; // 发送数据即视为在线
+        
+        ws.send(JSON.stringify({
+            type: 'volume',
+            deviceId: DEVICE_ID,
+            vol: vol,
+            avg: avg,
+            max: deviceStats[DEVICE_ID].max,
+            min: deviceStats[DEVICE_ID].min
+        }));
+    }
+}
+
+// 更新设备显示（100%复用版本二逻辑）
+function updateDeviceDisplay(device) {
+    if (isTerminated || isServerClosing) return;
+    
+    // 同步服务器返回的设备状态（含con字段）
+    deviceStats[device.deviceId] = {
+        ...deviceStats[device.deviceId],
+        currentVol: device.vol,
+        currentAvg: device.avg,
+        max: device.max,
+        min: device.min,
+        con: device.con // 关键：更新设备在线状态
+    };
+    
+    const statusElem = document.getElementById(`status-${device.deviceId}`);
+    const volumeElem = document.getElementById(`volume-${device.deviceId}`);
+    const currentElem = document.getElementById(`current-${device.deviceId}`);
+    const averageElem = document.getElementById(`average-${device.deviceId}`);
+    
+    if (statusElem && volumeElem && currentElem && averageElem) {
+        statusElem.className = `status-indicator ${device.con ? 'online' : 'offline'}`;
+        const volPercent = Math.min(Math.max(device.vol, 0), 100);
+        volumeElem.style.width = `${volPercent}%`;
+        currentElem.textContent = `${device.vol.toFixed(2)}%`;
+        averageElem.textContent = `${device.avg.toFixed(2)}%`;
+        
+        if (device.deviceId === DEVICE_ID || device.deviceId === COMPARE_DEVICE_ID) {
+            if (!deviceVolumeHistory[device.deviceId]) {
+                deviceVolumeHistory[device.deviceId] = [];
+            }
+            deviceVolumeHistory[device.deviceId].push(device.vol);
+        }
+    }
+    
+    // 同步更新登录界面的设备状态（即使当前在监测界面）
+    updateLoginScreenDeviceStatus();
+}
+
+// 登录界面设备状态更新（核心修复）
+function updateLoginScreenDeviceStatus() {
+    if (!DOM.deviceSquares.length) return;
+    
+    DOM.deviceSquares.forEach(square => {
+        const deviceId = parseInt(square.dataset.device);
+        const device = deviceStats[deviceId];
+        
+        // 移除所有颜色类和禁用类
+        square.classList.remove('bg-primary', 'bg-online', 'bg-offline', 'disabled');
+        
+        if (device.con && DEVICE_ID != deviceId) {
+            // 状态1：设备已被其他客户端登录（con=true）→ 绿色，禁用
+            square.classList.add('bg-online', 'disabled');
+        } else if (DEVICE_ID === deviceId) {
+            // 状态2：当前客户端选中的设备 → 蓝色，禁用
+            square.classList.add('bg-primary', 'disabled');
+        } else {
+            // 状态3：设备离线且未选中 → 灰色，可点击
+            square.classList.add('bg-offline');
+        }
+    });
+}
+
+// 处理结束统计信号（100%复用版本二逻辑）
+function handleEndStatistics(statsData) {
+    isTerminated = true;
+    
+    if (chartUpdateInterval) clearInterval(chartUpdateInterval);
+    if (audioContext) {
+        audioContext.close().catch(err => console.error('音频关闭错误:', err));
+    }
+    
+    DOM.monitoringScreen.style.display = 'none';
+    DOM.endScreen.style.display = 'block';
+    
+    adjustChartSize();
+    window.addEventListener('resize', adjustChartSize);
+    
+    if (Array.isArray(statsData)) {
+        initStatsChart(statsData);
+    } else {
+        console.error('统计数据格式错误');
+    }
+    
+    DOM.confirmBtn.onclick = () => sendTerminateProcessSignal();
+}
+
+// 动态调整图表尺寸（版本二原生逻辑）
+function adjustChartSize() {
+    const statContainer = document.querySelector('.stat-container');
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    
+    let chartWidth = Math.max(windowWidth * 0.9, 1000);
+    if (windowWidth < 480) {
+        chartWidth = windowWidth * 0.95;
+    }
+    
+    let chartHeight = windowHeight * 0.6;
+    chartHeight = Math.max(chartHeight, 300);
+    chartHeight = Math.max(chartHeight, 600);
+    if (windowHeight < 600) {
+        chartHeight = windowHeight * 0.5;
+    }
+    
+    statContainer.style.width = `${chartWidth}px`;
+    statContainer.style.height = `${chartHeight}px`;
+    
+    if (window.statsChartInstance) {
+        window.statsChartInstance.resize();
+    }
+}
+
+// 初始化统计图表（100%复用版本二逻辑）
+function initStatsChart(statsData) {
+    const labels = statsData.map(item => `设备 ${item.deviceId}`);
+    const maxValues = statsData.map(item => item.max);
+    const avgValues = statsData.map(item => item.avg);
+    const minValues = statsData.map(item => item.min);
+    
+    const ctx = document.getElementById('statsChart').getContext('2d');
+    if (window.statsChartInstance) {
+        window.statsChartInstance.destroy();
+    }
+    
+    window.statsChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '最大值',
+                    data: maxValues,
+                    backgroundColor: '#EF4444',
+                    borderWidth: 0,
+                    barPercentage: 0.35,
+                    categoryPercentage: 0.6
+                },
+                {
+                    label: '平均值',
+                    data: avgValues,
+                    backgroundColor: '#3B82F6',
+                    borderWidth: 0,
+                    barPercentage: 0.35,
+                    categoryPercentage: 0.6
+                },
+                {
+                    label: '最小值',
+                    data: minValues,
+                    backgroundColor: '#10B981',
+                    borderWidth: 0,
+                    barPercentage: 0.35,
+                    categoryPercentage: 0.6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 1500, easing: 'easeOutQuart' },
+            scales: {
+                x: { 
+                    grid: { display: false },
+                    ticks: {
+                        font: {
+                            size: Math.max(8, window.innerWidth * 0.015)
+                        }
+                    }
+                },
+                y: { 
+                    beginAtZero: true, 
+                    max: 100, 
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: {
+                        font: {
+                            size: Math.max(8, window.innerWidth * 0.015)
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${ctx.raw.toFixed(2)}%`
+                    }
+                }
+            },
+            interaction: { mode: 'index', intersect: false }
+        }
+    });
+}
+
+// 发送终止进程信号（优化发送逻辑）
+function sendTerminateProcessSignal() {
+    if (isServerClosing || !ws) {
+        console.log('发送失败：服务器已关闭或无连接');
+        return;
+    }
+    
+    if (ws.readyState === WebSocket.OPEN) {
+        try {
+            const signal = JSON.stringify({
+                type: 'terminate_process',
+                deviceId: DEVICE_ID,
+                timestamp: Date.now()
+            });
+            ws.send(signal);
+            console.log('已发送 terminate_process 信号：', signal);
+            DOM.confirmBtn.textContent = '服务器正在关闭...';
+            DOM.confirmBtn.disabled = true;
+            isServerClosing = true;
+            
+            setTimeout(() => {
+                if (!isServerClosing) return;
+                console.warn('服务器未响应关闭信号，可能已断开连接');
+                DOM.confirmBtn.textContent = '关闭超时，可手动关闭';
+            }, 3000);
+        } catch (e) {
+            console.error('发送关闭信号失败：', e);
+            DOM.confirmBtn.textContent = '发送失败，重试';
+            DOM.confirmBtn.disabled = false;
+        }
+    } else {
+        console.log('WebSocket未连接，无法发送关闭信号');
+        DOM.confirmBtn.textContent = '连接已断开';
+    }
+}
+
+// 更新服务器状态（适配登录界面）
+function updateServerStatus(connected) {
+    if (isTerminated || isServerClosing) return;
+    isConnected = connected;
+    DOM.serverStatus.className = `status-indicator ${connected ? 'online' : 'offline'}`;
+    
+    if (DOM.loginScreen.style.display === 'block') {
+        updateLoginStatus(
+            connected ? '已连接到服务器' : '与服务器断开连接',
+            connected ? 'text-green-600' : 'text-red-600'
+        );
+    }
+}
+
+// 更新登录状态
+function updateLoginStatus(text, className) {
+    DOM.loginStatus.textContent = `状态：${text}`;
+    DOM.loginStatus.className = 'text-center text-sm';
+    DOM.loginStatus.classList.add(...className.split(' '));
+}
+
+// 登录界面设备点击逻辑（核心修复）
+function handleDeviceSquareClick(e) {
+    const square = e.currentTarget;
+    const deviceId = parseInt(square.dataset.device);
+    
+    // 禁止点击的情况：未连接服务器、设备已被其他客户端登录、已选中当前设备
+    if (!ws || ws.readyState !== WebSocket.OPEN || deviceStats[deviceId].con || DEVICE_ID === deviceId) {
+        return;
+    }
+    
+    // 发送登录请求到服务器
+    ws.send(JSON.stringify({ type: 'login', device: deviceId }));
+    DEVICE_ID = deviceId;
+    DOM.startBtn.disabled = false;
+    updateLoginStatus(`已选择设备 ${deviceId}，等待管理员统一启动`, 'text-blue-600');
+    
+    // 立即更新登录界面设备颜色（本地先反馈，再同步服务器）
+    updateLoginScreenDeviceStatus();
+}
+
+// 更新登录界面设备颜色（初始化时调用）
+function updateDeviceSquareColors() {
+    updateLoginScreenDeviceStatus(); // 直接复用统一的状态更新函数
+}
+
+// 登录界面开始按钮点击（新增：向服务器发送启动信号）
+function handleStartClick() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !DEVICE_ID || isServerClosing) return;
+    
+    // 仅设备1（管理员）点击时，向服务器发送启动信号
+    if (DEVICE_ID === 1) {
+        ws.send(JSON.stringify({ 
+            type: 'start_monitor', 
+            deviceId: DEVICE_ID 
+        }));
+        console.log('管理员设备启动，已通知服务器同步其他设备');
+    }
+    
+    // 切换界面并启动监测
+    DOM.loginScreen.style.display = 'none';
+    DOM.monitoringScreen.style.display = 'block';
+    startMonitoring();
+}
+
+// 开始监测（还原图表更新间隔）
+async function startMonitoring() {
+    const audioInitialized = await initAudio();
+    if (!audioInitialized) console.log('音频初始化失败');
+    
+    // 初始化设备和图表（版本二原生逻辑）
+    initDevices();
+    initChart();
+    chartUpdateInterval = setInterval(addToChart, CHART_UPDATE_INTERVAL); // 还原为800ms
+    
+    const monitoringLoop = async () => {
+        if (isTerminated || isServerClosing) return;
+        
+        try {
+            if (!isConnected) {
+                setTimeout(monitoringLoop, SEND_INTERVAL); // 50ms间隔重试
+                return;
+            }
+            
+            vol = GetVolume();
+            cnt++;
+            
+            if (last - vol > 20) {
+                SendVolume(vol, avg);
+                
+                const clk = Date.now() / 1000;
+                let tmp_avg = (avg * (cnt - 1) + vol) / cnt;
+                
+                while (Date.now() / 1000 - clk <= 0.5) {
+                    if (isTerminated || isServerClosing) break;
+                    vol = GetVolume();
+                    cnt++;
+                    tmp_avg = (tmp_avg * (cnt - 1) + vol) / cnt;
+                    SendVolume(vol, avg);
+                    await new Promise(resolve => setTimeout(resolve, SEND_INTERVAL)); // 50ms间隔
+                }
+                
+                if (vol >= MIN_VALID_VOL && !isTerminated && !isServerClosing) {
+                    avg = tmp_avg;
+                    SendVolume(vol, avg);
+                    last = vol;
+                }
+            } else if (vol < MIN_VALID_VOL) {
+                SendVolume(vol, avg);
+            } else {
+                avg = (avg * (cnt - 1) + vol) / cnt;
+                SendVolume(vol, avg);
+                last = vol;
+            }
+        } catch (e) {
+            console.error('监测循环错误:', e);
+        }
+        
+        if (!isTerminated && !isServerClosing) {
+            setTimeout(monitoringLoop, SEND_INTERVAL); // 50ms发送间隔
+        }
+    };
+    
+    monitoringLoop();
+}
+
+// 连接WebSocket（新增：接收服务器同步启动信号）
+function connectWebSocket() {
+    ws = new WebSocket(WS_URL);
+    
+    ws.onopen = () => {
+        updateServerStatus(true);
+        // 连接成功后，立即请求更新登录界面状态（服务器会主动广播一次）
+        setTimeout(updateLoginScreenDeviceStatus, 100);
+    };
+    
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            
+            // 处理服务器结束信号（版本二逻辑）
+            if (typeof data === 'object' && data.type === 'end_statistics') {
+                handleEndStatistics(data.data);
+                return;
+            }
+            
+            // 新增：处理服务器的同步启动信号
+            if (typeof data === 'object' && data.type === 'start_monitor') {
+                console.log('收到管理员启动信号，自动开始监测');
+                // 条件：已登录（选择设备）且在登录界面
+                if (DEVICE_ID !== null && DOM.loginScreen.style.display === 'block') {
+                    DOM.loginScreen.style.display = 'none';
+                    DOM.monitoringScreen.style.display = 'block';
+                    startMonitoring();
+                }
+                return;
+            }
+            
+            // 处理服务器广播的设备状态数组（核心：同步登录界面和监测界面）
+            if (Array.isArray(data)) {
+                // 遍历所有设备状态，更新本地存储
+                data.forEach(device => {
+                    deviceStats[device.deviceId] = {
+                        ...deviceStats[device.deviceId],
+                        currentVol: device.vol,
+                        currentAvg: device.avg,
+                        max: device.max,
+                        min: device.min,
+                        con: device.con // 关键：同步在线状态
+                    };
+                    // 更新监测界面设备显示
+                    updateDeviceDisplay(device);
+                });
+                // 强制更新登录界面状态
+                updateLoginScreenDeviceStatus();
+                return;
+            }
+            
+            if (isTerminated || isServerClosing) return;
+            
+        } catch (e) {
+            console.error('消息解析失败:', e);
+        }
+    };
+    
+    ws.onclose = () => {
+        if (!isTerminated && !isServerClosing) {
+            updateServerStatus(false);
+            // 断开连接后，重置登录界面设备状态
+            Object.keys(deviceStats).forEach(id => {
+                deviceStats[id].con = false;
+            });
+            updateLoginScreenDeviceStatus();
+            setTimeout(connectWebSocket, 3000);
+        }
+    };
+    
+    ws.onerror = (error) => {
+        if (!isTerminated && !isServerClosing) {
+            console.error('WebSocket错误:', error);
+            updateServerStatus(false);
+        }
+    };
+}
+
+// 初始化登录界面事件
+function initLoginEvents() {
+    DOM.deviceSquares.forEach(square => square.addEventListener('click', handleDeviceSquareClick));
+    DOM.startBtn.addEventListener('click', handleStartClick);
+}
+
+// 全局初始化
+function init() {
+    initLoginEvents();
+    connectWebSocket();
+    updateDeviceSquareColors(); // 初始化登录界面设备颜色
+    
+    // 页面关闭时处理登出
+    window.addEventListener('beforeunload', () => {
+        if (ws && ws.readyState === WebSocket.OPEN && DEVICE_ID && !isServerClosing) {
+            ws.send(JSON.stringify({ type: 'logout', deviceId: DEVICE_ID }));
+            // 重置本地状态
+            if (deviceStats[DEVICE_ID]) {
+                deviceStats[DEVICE_ID].con = false;
+            }
+            updateLoginScreenDeviceStatus();
+        }
+    });
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
